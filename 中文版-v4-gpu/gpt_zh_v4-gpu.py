@@ -10,14 +10,14 @@ import math
 batch_size = 64
 block_size = 256
 max_iters = 100
-eval_interval = 500
+eval_interval = 200
 train_interval = 100
 learning_rate = 3e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 50
-n_embd = 512
-n_head = 8
-n_layer = 8
+n_embd = 640
+n_head = 10
+n_layer = 12
 dropout = 0.2
 
 torch.manual_seed(1337)
