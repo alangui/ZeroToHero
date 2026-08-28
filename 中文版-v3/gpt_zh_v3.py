@@ -39,7 +39,7 @@ def keep_char(c):
         or c in '0123456789'       # 数字（可选）
     )
 
-with open('corpus_clean_zh.txt', 'r', encoding='utf-8') as f:
+with open('../corpus_clean_zh.txt', 'r', encoding='utf-8') as f:
     text = f.read()
 text = clean_chars(text)
 
@@ -269,7 +269,7 @@ def train_one(model, opt):
 
 def load_mode_generate_txt_streaming():
     model = BigramLanguageModel()
-    model.load_state_dict(torch.load('model_final_zh_v3.pt', map_location='cpu'))
+    model.load_state_dict(torch.load('../中文版-v3-gpu/model_final_zh_v3.pt', map_location='cpu'))
     model.to(device)
     model.eval()
 
@@ -320,9 +320,9 @@ def main():
 
     #load_model_for_inference()
 
-    #load_mode_generate_txt_streaming()
+    load_mode_generate_txt_streaming()
 
-    analy_model()
+    #analy_model()
 
 if __name__ == "__main__":
     main()
