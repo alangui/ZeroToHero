@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 import json
 import math
 
-batch_size = 64
+batch_size = 128
 block_size = 256
-max_iters = 100
+max_iters = 10000
 eval_interval = 200
 train_interval = 100
 learning_rate = 3e-4
@@ -261,7 +261,9 @@ def train_loop():
     t_total = time.time() - t_start
     print(f"全部训练完成，总耗时 {t_total/60:.1f} 分钟，" f"平均每步 {t_total/max_iters*1000:.0f} 毫秒")
 
-    torch.save(model.state_dict(), 'model_final_zh_v4.pt')
+    if (iter+1) % 2000 == 0:    
+        torch.save(model.state_dict(), 'model_final_zh_v4_{iter}.pt')
+
     save_losses_json(losses_record)
     plot_losses(losses_record)
 
