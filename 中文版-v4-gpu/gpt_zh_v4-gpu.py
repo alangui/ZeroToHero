@@ -9,12 +9,12 @@ import math
 
 batch_size = 64
 block_size = 256
-max_iters = 10000
+max_iters = 100
 eval_interval = 500
 train_interval = 100
 learning_rate = 3e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-eval_iters = 100
+eval_iters = 50
 n_embd = 512
 n_head = 8
 n_layer = 8
@@ -24,6 +24,9 @@ torch.manual_seed(1337)
 # 防止中文乱码
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
 plt.rcParams['axes.unicode_minus'] = False
+
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 
 def clean_chars(text):
     cleaned_text = ''.join(c for c in text if keep_char(c))
@@ -74,7 +77,8 @@ def estimate_loss(model):
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
             X, Y = get_batch(split)
-            _, loss = model(X, Y)
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                _, loss = model(X, Y)
             losses[k] = loss.item()
         out[split] = losses.mean()
     model.train() # 将模型恢复为训练模式
@@ -220,7 +224,7 @@ def train_loop():
     t_train_start = 0.0
     losses_record = []
 
-    scaler = torch.cuda.amp.GradScaler()
+    scaler = torch.amp.GradScaler('cuda')
     # 训练循环
     for iter in range(max_iters):
         if iter % eval_interval == 0 or iter == max_iters - 1:
