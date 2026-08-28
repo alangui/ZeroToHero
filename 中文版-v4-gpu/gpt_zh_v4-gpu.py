@@ -220,6 +220,7 @@ def train_loop():
     t_train_start = 0.0
     losses_record = []
 
+    scaler = torch.cuda.amp.GradScaler()
     # 训练循环
     for iter in range(max_iters):
         if iter % eval_interval == 0 or iter == max_iters - 1:
@@ -232,10 +233,14 @@ def train_loop():
             t_train_start = time.time()
 
         xb, yb = get_batch('train')     # 获取批次
-        _, loss = model(xb, yb)    # 前向传播
+
+        with torch.autocast(device_type='cuda', dtype=torch.float16):   # 前向用 FP16
+            _, loss = model(xb, yb)    # 前向传播
 
         opt.zero_grad(set_to_none=True) # 重置梯度
-        loss.backward()                 # 反向传播
+        scaler.scale(loss).backward()        # 缩放后的反向传播
+        scaler.step(opt)
+        scaler.update()
 
         lr = get_lr(iter, max_iters)
         for g in opt.param_groups:
@@ -252,7 +257,7 @@ def train_loop():
     t_total = time.time() - t_start
     print(f"全部训练完成，总耗时 {t_total/60:.1f} 分钟，" f"平均每步 {t_total/max_iters*1000:.0f} 毫秒")
 
-    torch.save(model.state_dict(), 'model_final_zh_v3.pt')
+    torch.save(model.state_dict(), 'model_final_zh_v4.pt')
     save_losses_json(losses_record)
     plot_losses(losses_record)
 
@@ -269,7 +274,7 @@ def train_one(model, opt):
 
 def load_mode_generate_txt_streaming():
     model = BigramLanguageModel()
-    model.load_state_dict(torch.load('model_final_zh_v3.pt', map_location='cpu'))
+    model.load_state_dict(torch.load('model_final_zh_v4.pt', map_location='cpu'))
     model.to(device)
     model.eval()
 
@@ -279,7 +284,7 @@ def load_mode_generate_txt_streaming():
 
 def load_model_for_inference():
     model = BigramLanguageModel()
-    model.load_state_dict(torch.load('model_final_zh_v3.pt', map_location='cpu'))
+    model.load_state_dict(torch.load('model_final_zh_v4.pt', map_location='cpu'))
     model.to(device)
     model.eval()
 
@@ -288,12 +293,12 @@ def load_model_for_inference():
 
 
 def analy_model():
-    ckpt = torch.load('model_final_zh_v3.pt', map_location='cpu', weights_only=True)
+    ckpt = torch.load('model_final_zh_v4.pt', map_location='cpu', weights_only=True)
 
     for name, tensor in ckpt.items():
         print(f"{name:45s} {tuple(tensor.shape)}")
 
-def plot_losses(losses_record, save_path='loss_curve_v3.png'):
+def plot_losses(losses_record, save_path='loss_curve_v4.png'):
     # x 轴：每次评估对应的训练步数（0, 500, 1000, ... 最后一步）
     steps = [i * eval_interval for i in range(len(losses_record))]
     train_losses = [l['train'] for l in losses_record]
@@ -311,16 +316,16 @@ def plot_losses(losses_record, save_path='loss_curve_v3.png'):
     print(f"趋势图已保存到 {save_path}")
 
 def save_losses_json(losses_record):
-    with open('losses_record_v3.json', 'w') as f:
+    with open('losses_record_v4.json', 'w') as f:
         json.dump(losses_record, f)
 
 def main():
 
-    #train_loop()
+    train_loop()
 
     #load_model_for_inference()
 
-    load_mode_generate_txt_streaming()
+    #load_mode_generate_txt_streaming()
 
     #analy_model()
 
