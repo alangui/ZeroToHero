@@ -6,19 +6,23 @@ import re
 import matplotlib.pyplot as plt
 import json
 import math
+import logging
+from torch.utils.checkpoint import checkpoint
 
-batch_size = 128
+batch_size = 64
 block_size = 256
 max_iters = 10000
 eval_interval = 200
 train_interval = 100
 learning_rate = 3e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-eval_iters = 50
-n_embd = 640
-n_head = 10
+eval_iters = 20
+n_embd = 768
+n_head = 12
 n_layer = 12
 dropout = 0.2
+save_model_interval = 3000
+cuda_mem_sum_interval = 2000
 
 torch.manual_seed(1337)
 # 防止中文乱码
@@ -27,6 +31,15 @@ plt.rcParams['axes.unicode_minus'] = False
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s',
+    handlers=[
+        logging.FileHandler('train.log', encoding='utf-8'),  # 写入文件
+        logging.StreamHandler()  # 同时打印到终端
+    ]
+)
 
 def clean_chars(text):
     cleaned_text = ''.join(c for c in text if keep_char(c))
@@ -58,7 +71,7 @@ data = torch.tensor(encode(text), dtype=torch.long)
 n = int(0.9*len(data)) # 前90%的字符用于训练
 train_data = data[:n]
 val_data = data[n:]
-print(f"总样本数据 {len(data)}, 训练集 {len(train_data)} 验证集 {len(val_data)}")
+logging.info(f"总样本数据 {len(data)}, 训练集 {len(train_data)} 验证集 {len(val_data)}")
 # 数据加载
 def get_batch(split):
     # 生成一小批数据，包含输入x和目标y
@@ -100,13 +113,22 @@ class Head(nn.Module):
         k = self.key(x)
         q = self.query(x)
 
-        wei = q @ k.transpose(-2, -1) * (self.head_size ** -0.5)
-        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
-        wei = F.softmax(wei, dim=-1)
-        wei = self.dropout(wei)
+        #wei = q @ k.transpose(-2, -1) * (self.head_size ** -0.5)
+        #wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
+        #wei = F.softmax(wei, dim=-1)
+        #wei = self.dropout(wei)
+        #out = wei @ self.value(x)
+        #return out
 
-        out = wei @ self.value(x)
-        return out
+        # 由于GPU 8G显存不够 对上面注释代码做如下优化，自动实现下三角掩码wei
+        # PyTorch 内置的 F.scaled_dot_product_attention 底层用 Flash Attention 内核，从不物化完整注意力矩阵，还顺带用上 Tensor Core 提速。
+        v = self.value(x)
+        out = F.scaled_dot_product_attention(
+            q.unsqueeze(1), k.unsqueeze(1), v.unsqueeze(1),
+            is_causal=True,
+            dropout_p=self.dropout.p if self.training else 0.0
+        )
+        return out.squeeze(1)        
 
 
 class MultiHeadAttention(nn.Module):
@@ -150,8 +172,15 @@ class Block(nn.Module):
         self.ln2 = nn.LayerNorm(n_embd)
 
     def forward(self, x):
-        x = x + self.sa_head(self.ln1(x))
-        x = x + self.ffwd(self.ln2(x))
+        #x = x + self.sa_head(self.ln1(x))
+        #x = x + self.ffwd(self.ln2(x))
+
+        # 由于GPU 8G显存不够 对上面注释代码做如下优化
+        # 反向传播时重新计算激活值而不是存着，能省掉 60%+ 的激活显存，代价是训练慢约 30%——但比起溢出后的 20 秒/步，这个交换血赚。
+        # 前向时不再保存每一层的中间激活值，只存每层的输入；反向传播到某层时，临时重新跑一遍该层前向来重建激活值。用约 30% 的额外计算，换掉大部分激活值显存。对生成/评估无影响
+        x = x + checkpoint(lambda t: self.sa_head(self.ln1(t)), x, use_reentrant=False)
+        x = x + checkpoint(lambda t: self.ffwd(self.ln2(t)), x, use_reentrant=False)
+
         return x
 
 
@@ -215,7 +244,7 @@ def get_lr(iter, max_iters, base_lr=3e-4, min_lr=3e-5, warmup=100):
 def train_loop():
     model = BigramLanguageModel()
     m = model.to(device)
-    print(sum(p.numel() for p in m.parameters()), ' 个参数')
+    logging.info(f"{sum(p.numel() for p in m.parameters())} 个参数")
     # 创建PyTorch优化器
     opt = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.1)
 
@@ -231,7 +260,7 @@ def train_loop():
             t_eval = time.time()
             losses = estimate_loss(model)
             losses_record.append({'train': float(losses['train']), 'val': float(losses['val'])})
-            print(f"第{iter}次训练后loss评估: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, loss评估耗时 {time.time() - t_eval:.1f} 秒") 
+            logging.info(f"第{iter}次训练后loss评估: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, loss评估耗时 {time.time() - t_eval:.1f} 秒") 
 
         if iter % train_interval == 0:
             t_train_start = time.time()
@@ -241,28 +270,31 @@ def train_loop():
         with torch.autocast(device_type='cuda', dtype=torch.float16):   # 前向用 FP16
             _, loss = model(xb, yb)    # 前向传播
 
-        opt.zero_grad(set_to_none=True) # 重置梯度
+        opt.zero_grad(set_to_none=True)      # 重置梯度
         scaler.scale(loss).backward()        # 缩放后的反向传播
         scaler.step(opt)
         scaler.update()
+
+        if iter % cuda_mem_sum_interval == 0:
+            logging.info(torch.cuda.memory_summary())
 
         lr = get_lr(iter, max_iters)
         for g in opt.param_groups:
             g['lr'] = lr
 
-        opt.step()                      # 更新参数
-
         if (iter+1) % train_interval == 0:
             t_train_end = time.time() - t_train_start
             t_train_sum += t_train_end
-            print(f"第{iter+1}次train 完成, 本轮{train_interval}次训练耗时 {t_train_end:.1f} 秒, "
+            logging.info(f"第{iter+1}次train 完成, 本轮{train_interval}次训练耗时 {t_train_end:.1f} 秒, "
                   f"累计训练耗时 {t_train_sum/60:.1f} 分钟, 当前学习率 {lr:.2e}")
 
-    t_total = time.time() - t_start
-    print(f"全部训练完成，总耗时 {t_total/60:.1f} 分钟，" f"平均每步 {t_total/max_iters*1000:.0f} 毫秒")
+        if (iter+1) % save_model_interval == 0:    
+            torch.save(model.state_dict(), f'model_final_zh_v4_{iter}.pt')    
 
-    if (iter+1) % 2000 == 0:    
-        torch.save(model.state_dict(), 'model_final_zh_v4_{iter}.pt')
+    t_total = time.time() - t_start
+    logging.info(f"全部训练完成，总耗时 {t_total/60:.1f} 分钟，" f"平均每步 {t_total/max_iters*1000:.0f} 毫秒")
+
+    torch.save(model.state_dict(), f'model_final_zh_v4.pt')
 
     save_losses_json(losses_record)
     plot_losses(losses_record)
