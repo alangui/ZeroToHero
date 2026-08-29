@@ -317,7 +317,7 @@ def load_mode_generate_txt_streaming():
     model.eval()
 
     context = torch.zeros((1, 1), dtype=torch.long, device=device)
-    model.generate_streaming(context, max_new_tokens=500)
+    model.generate_streaming(context, max_new_tokens=1000)
     
 
 def load_model_for_inference():
@@ -359,11 +359,11 @@ def save_losses_json(losses_record):
 
 def main():
 
-    train_loop()
+    #train_loop()
 
     #load_model_for_inference()
 
-    #load_mode_generate_txt_streaming()
+    load_mode_generate_txt_streaming()
 
     #analy_model()
 
