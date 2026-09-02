@@ -340,7 +340,7 @@ def plot_losses(losses_record, save_path='loss_curve_v6.png'):
     print(f"趋势图已保存到 {save_path}")
 
 def save_losses_json(losses_record):
-    with open('losses_record_5.json', 'w') as f:
+    with open('losses_record_v6.json', 'w') as f:
         json.dump(losses_record, f)
 
 def main():
