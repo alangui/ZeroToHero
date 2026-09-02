@@ -2,18 +2,17 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import time
-import re
 import matplotlib.pyplot as plt
 import json
 import math
 import logging
 from torch.utils.checkpoint import checkpoint
-import tiktoken
+import sentencepiece as spm
 
 batch_size = 64
 block_size = 256
-max_iters = 1
-eval_interval = 200
+max_iters = 10000
+eval_interval = 500
 train_interval = 100
 learning_rate = 3e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -42,33 +41,19 @@ logging.basicConfig(
     ]
 )
 
-def clean_chars(text):
-    cleaned_text = ''.join(c for c in text if keep_char(c))
-    cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text)
-    return cleaned_text
-
-def keep_char(c):
-    o = ord(c)
-    return (
-        0x4E00 <= o <= 0x9FFF      # 基本汉字
-        or 0x3400 <= o <= 0x4DBF   # 扩展A区汉字（生僻字）
-        or c in '\n，。！？；：、""''（）《》〈〉【】「」……—·～'
-        or c in '0123456789'       # 数字（可选）
-    )
-
-with open('../corpus_clean_zh.txt', 'r', encoding='utf-8') as f:
+with open('clean_chars.txt', 'r', encoding='utf-8') as f:
     text = f.read()
-text = clean_chars(text)
 
-# 将字符级分词方式改为 GPT4 BPE分词方式
-enc = tiktoken.get_encoding("gpt2")
-vocab_size = enc.n_vocab
+sp = spm.SentencePieceProcessor(model_file='zh_bpe.model')
+## 此处需要注册一个用户自定义符号当"换行 token"？不然推理有问题，生成文本会变成一坨从头到尾不分段的文字
+## TODO
+data = torch.tensor(sp.encode(text), dtype=torch.long) 
+vocab_size = sp.vocab_size() 
 
-data = torch.tensor(enc.encode(text), dtype=torch.long)
 n = int(0.9*len(data)) # 前90%的字符用于训练
 train_data = data[:n]
 val_data = data[n:]
-logging.info(f"总样本数据 {len(data)}, 训练集 {len(train_data)} 验证集 {len(val_data)}")
+logging.info(f"总样本数据 {len(data)}, 训练集 {len(train_data)} 验证集 {len(val_data)} 词元表大小:{vocab_size}")
 # 数据加载
 def get_batch(split):
     # 生成一小批数据，包含输入x和目标y
@@ -229,7 +214,7 @@ class BigramLanguageModel(nn.Module):
             probs = F.softmax(logits, dim=-1)                  # 基于最后一个token计算下一个token的概率分布，结果为(B, C)
             idx_next = torch.multinomial(probs, num_samples=1) # 采样下一个token（B, 1），概率最高的token最可能被采样到
             idx = torch.cat((idx, idx_next), dim=1)            # 将新token添加到序列中（B, T+1），用于下一次迭代
-            print(enc.decode(idx_next[0].tolist()), end='', flush=True)
+            print(sp.decode(idx_next[0].tolist()).replace('[BR]', '\n'), end='', flush=True)
         print()
 
 def get_lr(iter, max_iters, base_lr=3e-4, min_lr=3e-5, warmup=100):
@@ -324,8 +309,7 @@ def load_model_for_inference():
     model.eval()
 
     context = torch.zeros((1, 1), dtype=torch.long, device=device)
-    print(enc.decode(model.generate(context, max_new_tokens=1000)[0].tolist()))
-
+    print(sp.decode(model.generate(context, max_new_tokens=1000)[0].tolist()).replace('[BR]', '\n'), end='', flush=True)
 
 def analy_model():
     ckpt = torch.load('model_final_zh_v5.pt', map_location='cpu', weights_only=True)
@@ -356,11 +340,11 @@ def save_losses_json(losses_record):
 
 def main():
 
-    train_loop()
+    #train_loop()
 
     #load_model_for_inference()
 
-    #load_mode_generate_txt_streaming()
+    load_mode_generate_txt_streaming()
 
     #analy_model()
 
