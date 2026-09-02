@@ -345,11 +345,11 @@ def save_losses_json(losses_record):
 
 def main():
 
-    train_loop()
+    #train_loop()
 
     #load_model_for_inference()
 
-    #load_mode_generate_txt_streaming()
+    load_mode_generate_txt_streaming()
 
     #analy_model()
 
