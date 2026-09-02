@@ -6,3 +6,6 @@ __pycache__/
 
 # 模型权重文件不进版本控制
 *.pt
+
+# 超大语料文件（超过 GitHub 100MB 限制）
+wiki_corpus_0.1b_clean.txt
