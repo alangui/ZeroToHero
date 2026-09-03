@@ -10,19 +10,19 @@ from torch.utils.checkpoint import checkpoint
 import sentencepiece as spm
 import random
 
-batch_size = 64
+batch_size = 32
 block_size = 256
 max_iters = 20000
-eval_interval = 200
+eval_interval = 400
 train_interval = 100
 learning_rate = 3e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-eval_iters = 50
-n_embd = 768
-n_head = 12
-n_layer = 12
+eval_iters = 20
+n_embd = 1024
+n_head = 16
+n_layer = 16
 dropout = 0.2
-save_model_interval = 3000
+save_model_interval = 6000
 cuda_mem_sum_interval = 2000
 
 torch.manual_seed(1337)
@@ -49,10 +49,12 @@ sp = spm.SentencePieceProcessor(model_file='zh_bpe.model')
 ## 此处注册一个用户自定义符号当"换行 token", 不然推理有问题，生成文本会变成一坨从头到尾不分段的文字
 NL_ID = sp.piece_to_id('[BR]')
 
+lines = text.split('\n')
 ids = []
-for line in text.split('\n'):
-    ids.extend(sp.encode(line))
+for line_ids in sp.encode(lines):   # 列表输入，多线程批量编码
+    ids.extend(line_ids)
     ids.append(NL_ID)
+
 data = torch.tensor(ids, dtype=torch.long)
 vocab_size = sp.vocab_size() 
 
@@ -191,6 +193,7 @@ class BigramLanguageModel(nn.Module):
         self.ln_f = nn.LayerNorm(n_embd)
         self.lm_head = nn.Linear(n_embd, vocab_size)
         self.lm_head.weight = self.token_embd.weight   # 新增：权重共享
+        nn.init.normal_(self.token_embd.weight, mean=0.0, std=0.02)  # GPT-2 标准初始化
 
     def forward(self, idx, targets=None):
         B, T = idx.shape
@@ -273,6 +276,10 @@ def train_loop():
         if iter % train_interval == 0:
             t_train_start = time.time()
 
+        lr = get_lr(iter, max_iters)
+        for g in opt.param_groups:
+            g['lr'] = lr
+
         xb, yb = get_batch('train')     # 获取批次
 
         with torch.autocast(device_type='cuda', dtype=torch.float16):   # 前向用 FP16
@@ -280,15 +287,15 @@ def train_loop():
 
         opt.zero_grad(set_to_none=True)      # 重置梯度
         scaler.scale(loss).backward()        # 缩放后的反向传播
+
+        # 梯度裁剪，防梯度尖峰
+        scaler.unscale_(opt)                 # 裁剪前必须先 unscale
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         scaler.step(opt)
         scaler.update()
 
         if iter % cuda_mem_sum_interval == 0:
             logging.info(torch.cuda.memory_summary())
-
-        lr = get_lr(iter, max_iters)
-        for g in opt.param_groups:
-            g['lr'] = lr
 
         if (iter+1) % train_interval == 0:
             t_train_end = time.time() - t_train_start
@@ -297,7 +304,7 @@ def train_loop():
                   f"累计训练耗时 {t_train_sum/60:.1f} 分钟, 当前学习率 {lr:.2e}")
 
         if (iter+1) % save_model_interval == 0:    
-            torch.save(model.state_dict(), f'model_final_zh_v7_{iter}.pt')    
+            torch.save(model.state_dict(), f'model_ckpt_zh_v7_{iter+1}.pt')    
 
     t_total = time.time() - t_start
     logging.info(f"全部训练完成，总耗时 {t_total/60:.1f} 分钟，" f"平均每步 {t_total/max_iters*1000:.0f} 毫秒")
@@ -324,7 +331,7 @@ def load_mode_generate_txt_streaming():
     model.to(device)
     model.eval()
 
-    context = torch.zeros((1, 1), dtype=torch.long, device=device)
+    context = torch.tensor([[NL_ID]], dtype=torch.long, device=device)
     model.generate_streaming(context, max_new_tokens=1000)
     
 
@@ -334,7 +341,7 @@ def load_model_for_inference():
     model.to(device)
     model.eval()
 
-    context = torch.zeros((1, 1), dtype=torch.long, device=device)
+    context = torch.tensor([[NL_ID]], dtype=torch.long, device=device)
     print(sp.decode(model.generate(context, max_new_tokens=1000)[0].tolist()).replace('[BR]', '\n'), end='', flush=True)
 
 def analy_model():
@@ -366,11 +373,11 @@ def save_losses_json(losses_record):
 
 def main():
 
-    #train_loop()
+    train_loop()
 
     #load_model_for_inference()
 
-    load_mode_generate_txt_streaming()
+    #load_mode_generate_txt_streaming()
 
     #analy_model()
 
