@@ -9,10 +9,11 @@ import logging
 from torch.utils.checkpoint import checkpoint
 import sentencepiece as spm
 import random
+import numpy as np
 
 batch_size = 32
 block_size = 256
-max_iters = 100
+max_iters = 32000
 eval_interval = 400
 train_interval = 100
 learning_rate = 3e-4
@@ -22,8 +23,8 @@ n_embd = 1024
 n_head = 16
 n_layer = 16
 dropout = 0.2
-save_model_interval = 6000
-cuda_mem_sum_interval = 2000
+save_model_interval = 10000
+cuda_mem_sum_interval = 3000
 save_best_model_flag = True
 
 torch.manual_seed(1337)
@@ -43,7 +44,7 @@ logging.basicConfig(
     ]
 )
 
-with open('../wiki_corpus_0.2b_clean.txt', 'r', encoding='utf-8') as f:
+with open('../wiki_corpus_0.3b_clean.txt', 'r', encoding='utf-8') as f:
     text = f.read()
 
 sp = spm.SentencePieceProcessor(model_file='zh_bpe.model')
@@ -51,12 +52,11 @@ sp = spm.SentencePieceProcessor(model_file='zh_bpe.model')
 NL_ID = sp.piece_to_id('[BR]')
 
 lines = text.split('\n')
-ids = []
-for line_ids in sp.encode(lines):   # 列表输入，多线程批量编码
-    ids.extend(line_ids)
-    ids.append(NL_ID)
-
-data = torch.tensor(ids, dtype=torch.long)
+del text
+ids = np.concatenate([np.array(l + [NL_ID], dtype=np.int32) for l in sp.encode(lines)])
+del lines
+data = torch.from_numpy(ids.astype(np.int64))
+del ids
 vocab_size = sp.vocab_size() 
 
 
@@ -266,7 +266,7 @@ def train_loop():
 
             # ===== 新增：val 创新低才保存最优模型 =====
             cur_val = float(losses['val'])
-            if save_best_model_flag and cur_val < best_val and iter > 15000:
+            if save_best_model_flag and cur_val < best_val and iter > 20000:
                 best_val = cur_val
                 best_iter = iter
                 torch.save(model.state_dict(), 'model_best_zh_v10.pt')
@@ -369,11 +369,11 @@ def save_losses_json(losses_record):
 
 def main():
 
-    #train_loop()
+    train_loop()
 
     #load_model_for_inference()
 
-    load_mode_generate_txt_streaming()
+    #load_mode_generate_txt_streaming()
 
     #analy_model()
 

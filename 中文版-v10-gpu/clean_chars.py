@@ -15,11 +15,11 @@ def keep_char(c):
     )
 
 def save_txt(clean_chars):
-    with open('../wiki_corpus_0.2b_clean.txt', 'w',  encoding='utf-8') as f:
+    with open('../wiki_corpus_0.3b_clean.txt', 'w',  encoding='utf-8') as f:
         f.write(clean_chars)
     
 
-with open('../wiki_corpus_0.2b.txt', 'r', encoding='utf-8') as f:
+with open('../wiki_corpus_0.3b.txt', 'r', encoding='utf-8') as f:
     text = f.read()
 
 print(len(text))
