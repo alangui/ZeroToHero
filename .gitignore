@@ -9,3 +9,4 @@ __pycache__/
 
 # 超大语料文件（超过 GitHub 100MB 限制）
 wiki_corpus_0.1b_clean.txt
+wiki_corpus_0.2b_clean.txt
