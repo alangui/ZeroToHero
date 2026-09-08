@@ -11,3 +11,7 @@ __pycache__/
 wiki_corpus_0.1b_clean.txt
 wiki_corpus_0.2b_clean.txt
 wiki_corpus_0.3b_clean.txt
+wiki_corpus_0.4b_clean.txt
+
+# 基准测试大文件（超过 GitHub 100MB 限制）
+中文版-v10-基准测试/benchmark_val.txt

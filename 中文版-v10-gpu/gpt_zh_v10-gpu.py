@@ -367,15 +367,40 @@ def save_losses_json(losses_record):
     with open('losses_record_v10.json', 'w') as f:
         json.dump(losses_record, f)
 
+def eval_with_v9_val():
+    with open('../wiki_corpus_0.1b_clean.txt', 'r', encoding='utf-8') as f:
+        old_ids = []
+        for line_ids in sp.encode(f.read().split('\n')):
+            old_ids.extend(line_ids); old_ids.append(NL_ID)
+    _, old_val = random_split(torch.tensor(old_ids, dtype=torch.long))  # 同 seed → v8 原验证集
+
+    model = BigramLanguageModel()
+    model.load_state_dict(torch.load('model_best_zh_v10.pt', map_location='cpu'))
+    model.to(device).eval()
+
+    losses = torch.zeros(50)  # 多评几轮压低噪声
+    with torch.no_grad():
+        for k in range(50):
+            ix = torch.randint(len(old_val) - block_size, (batch_size,))
+            x = torch.stack([old_val[i:i+block_size] for i in ix]).to(device)
+            y = torch.stack([old_val[i+1:i+block_size+1] for i in ix]).to(device)
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                _, l = model(x, y)
+            losses[k] = l.item()
+    print(f"v10 在 v9 验证集上的 val loss: {losses.mean():.4f}")  # 这个数才能和 3.6008 比
+
+
 def main():
 
-    train_loop()
+    #train_loop()
 
     #load_model_for_inference()
 
     #load_mode_generate_txt_streaming()
 
     #analy_model()
+
+    eval_with_v9_val()
 
 if __name__ == "__main__":
     main()

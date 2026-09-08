@@ -9,6 +9,7 @@ import logging
 from torch.utils.checkpoint import checkpoint
 import sentencepiece as spm
 import random
+import numpy as np
 
 batch_size = 32
 block_size = 256
@@ -367,15 +368,37 @@ def save_losses_json(losses_record):
     with open('losses_record_v9.json', 'w') as f:
         json.dump(losses_record, f)
 
+def eval_with_v10():
+    with open('../wiki_corpus_0.3b_clean.txt', 'r', encoding='utf-8') as f:
+        new_ids = np.concatenate([np.array(l + [NL_ID], dtype=np.int32) for l in sp.encode(f.read().split('\n'))])
+    _, v10_val = random_split(torch.from_numpy(new_ids.astype(np.int64)))  # 同 seed → v10 的验证集
+
+    model = BigramLanguageModel()
+    model.load_state_dict(torch.load('model_best_zh_v9.pt', map_location='cpu'))  # ← 注意是 v9 的模型
+    model.to(device).eval()
+
+    losses = torch.zeros(50)
+    with torch.no_grad():
+        for k in range(50):
+            ix = torch.randint(len(v10_val) - block_size, (batch_size,))
+            x = torch.stack([v10_val[i:i+block_size] for i in ix]).to(device)
+            y = torch.stack([v10_val[i+1:i+block_size+1] for i in ix]).to(device)
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                _, l = model(x, y)
+            losses[k] = l.item()
+    print(f"v9 在 v10 验证集上的 val loss: {losses.mean():.4f}")
+
 def main():
 
-    train_loop()
+    #train_loop()
 
     #load_model_for_inference()
 
     #load_mode_generate_txt_streaming()
 
     #analy_model()
+
+    eval_with_v10()
 
 if __name__ == "__main__":
     main()
