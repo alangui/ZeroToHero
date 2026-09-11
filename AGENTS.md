@@ -17,7 +17,10 @@ ZeroToHero/
 ├── gpt.py                    # 英文版起点：tiny-shakespeare 字符级 GPT（Karpathy 原始教程的中文注释+扩展版）
 ├── gpt_zh.py                 # 中文版：AMC 语料字符级 GPT，增加 loss 曲线图/JSON 记录
 ├── prepare_data.py           # 语料预处理：合并 AMC_mini 四个子语料 → 白名单清洗 → corpus_clean_zh.txt + vocab_zh.json
-├── gpt2/train_gpt2_1.py      # 未完成的残稿（只有 4 行，勿当作可运行代码）
+├── gpt2/                     # Karpathy "Let's reproduce GPT-2 (124M)" 复现系列：train_gpt2_1~4.py 按教程阶段递增
+│                             #   （结构 → tiktoken 分词/数据 → 训练循环 → 优化），train_gpt2_1_kimi.py 为中文注释版
+├── clean_chars.py            # 根目录版清洗脚本：wiki_corpus_0.4b.txt → wiki_corpus_0.4b_clean.txt
+├── corpus_forensics.py       # 语料取证：统计各版本 wiki 语料的行数、去重率与包含关系（0.1b ⊆ 0.3b 等）
 ├── tiny-shakespeare.txt      # 英文训练语料
 ├── corpus_clean_zh.txt       # 清洗合并后的中文语料（prepare_data.py 产物，~55MB，Git LFS 管理）
 ├── vocab_zh.json             # 字符级词表（prepare_data.py 产物）
@@ -40,6 +43,10 @@ ZeroToHero/
 | `clean_chars.py` | 语料白名单清洗脚本 |
 
 - `中文版-v7-gpu/` 内含 `中文版-v7.1-gpu/`、`中文版-v7.2-gpu/` 两个**消融实验**子目录（用于定位 tying 权重共享的负面影响）
+- `中文版-v10-基准测试/` 不是训练实验，而是**永久基准验证集**与收官总结：
+  - `build_benchmark.py`：用 0.4b 语料剔除与 0.3b 训练语料重叠的行 → 冻结为 `benchmark_val.pt`（约 9944 万 token，所有历史模型均未见过）；`benchmark_val.txt` 因超 100MB 被 .gitignore 排除
+  - `eval_on_benchmark.py`：在基准集上给任意 checkpoint 评分（改 `MODEL_PATH` 一行即可），是 v6 起跨版本对比的统一口径
+  - `中文GPT系列终章_v1-v10缩放定律总结.md`：整个系列的收官文档，从缩放定律视角复盘 v1–v10
 
 ### 版本演进主线（各版本总结文档中有完整对比表）
 
@@ -47,7 +54,8 @@ ZeroToHero/
 2. **v5~v6**：切换到 sentencepiece **BPE 分词**（vocab 16000，`[BR]` 自定义符号保留换行）
 3. **v7 / v7.1 / v7.2**：消融实验，定罪 embedding/lm_head 权重共享（tying）有害，**永久移除**
 4. **v8~v9**：干净配方长训（234.5M 参数，16 层 × 1024 维 × 16 头），余弦学习率 + best-checkpoint 保存，v9 探明 0.1b 语料的数据天花板（best val 3.4611）
-5. **v10**：扩语料到 `wiki_corpus_0.3b_clean.txt`
+5. **v10**：扩语料到 `wiki_corpus_0.3b_clean.txt`（2.0 亿 token，E=1.31），永久基准 3.1819，系列收官
+6. **收官结论**（详见终章总结）：8GB 单卡尺度下边际收益排序为 **新鲜数据 > 模型扩容 > 重复训练**；Chinchilla 配比 D≈20N 意味着 234.5M 模型可吃约 47 亿 token，当前远未吃饱
 
 ## 三、技术栈与运行方式
 
@@ -58,6 +66,7 @@ ZeroToHero/
 - `torch`（MPS 或 CUDA 版）
 - `matplotlib`（loss 曲线，脚本内已配置中文字体防乱码）
 - `sentencepiece`（v5 起的 BPE 分词）
+- `tiktoken`（仅 `gpt2/` 复现系列使用）
 - `numpy`
 
 ### 运行
@@ -87,7 +96,8 @@ GPU 版的关键优化（v4 起逐步加入，改动新版时应继承）：
 - **清洗**：白名单制（`keep_char()`）——基本汉字、扩展A区汉字、中文标点、换行、数字，其余一律删除；`\n{3,}` 压缩为 `\n\n`
 - **BPE 换行坑**（v5 总结中的教训）：sentencepiece 按行训练，`\n` 永远不会成为 token。必须注册 `user_defined_symbols=['[BR]']`，编码时逐行 encode 并在行间插入 `[BR]` 的 id，解码后 `.replace('[BR]', '\n')`
 - **训练/验证切分**：GPU 版用 `random_split()` 按 1024-token chunk 随机切分（seed 1337），保证跨版本 val 可比；换语料后 val 不可比，需用旧 val 集补测
-- **wiki 大语料**（`wiki_corpus_0.*b*.txt`）不进版本控制（.gitignore），需要时由各版本目录下的 `clean_chars.py` 从原始语料清洗生成
+- **永久基准集**（v6 起的统一对比口径）：`中文版-v10-基准测试/benchmark_val.pt`，由 `build_benchmark.py` 从 0.4b 语料剔除与 0.3b 训练语料重叠的行后冻结生成；评测用 `eval_on_benchmark.py`，只改 `MODEL_PATH` 一行
+- **wiki 大语料**（`wiki_corpus_0.*b*.txt`）不进版本控制（.gitignore），需要时由 `clean_chars.py` 从原始语料清洗生成（根目录版本生成 0.4b，各版本目录下的生成对应版本）；版本间语料是超集关系（0.1b ⊆ 0.3b 等），可用根目录 `corpus_forensics.py` 验证
 
 ## 四、实验方法论与开发约定
 
