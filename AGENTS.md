@@ -17,8 +17,9 @@ ZeroToHero/
 ├── gpt.py                    # 英文版起点：tiny-shakespeare 字符级 GPT（Karpathy 原始教程的中文注释+扩展版）
 ├── gpt_zh.py                 # 中文版：AMC 语料字符级 GPT，增加 loss 曲线图/JSON 记录
 ├── prepare_data.py           # 语料预处理：合并 AMC_mini 四个子语料 → 白名单清洗 → corpus_clean_zh.txt + vocab_zh.json
-├── gpt2/                     # Karpathy "Let's reproduce GPT-2 (124M)" 复现系列：train_gpt2_1~4.py 按教程阶段递增
-│                             #   （结构 → tiktoken 分词/数据 → 训练循环 → 优化），train_gpt2_1_kimi.py 为中文注释版
+├── gpt2/                     # Karpathy "Let's reproduce GPT-2 (124M)" 复现系列：train_gpt2_1~6.py 按教程阶段递增
+│                             #   （结构 → tiktoken 分词/数据 → 训练循环 → 速度优化 → DDP 分布式 + 验证集 + HellaSwag 评估），
+│                             #   train_gpt2_1_kimi.py 为中文注释版；train_gpt2_6 依赖 Karpathy 仓库的 hellaswag.py（未入库，需自行下载）
 ├── clean_chars.py            # 根目录版清洗脚本：wiki_corpus_0.4b.txt → wiki_corpus_0.4b_clean.txt
 ├── corpus_forensics.py       # 语料取证：统计各版本 wiki 语料的行数、去重率与包含关系（0.1b ⊆ 0.3b 等）
 ├── tiny-shakespeare.txt      # 英文训练语料
