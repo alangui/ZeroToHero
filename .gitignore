@@ -15,3 +15,7 @@ wiki_corpus_0.4b_clean.txt
 
 # 基准测试大文件（超过 GitHub 100MB 限制）
 中文版-v10-基准测试/benchmark_val.txt
+
+# SFT 指令数据原始文件（download_sft_data.py 可随时重新下载）
+中文版-v11-sft/alpaca_gpt4_data_zh.json
+

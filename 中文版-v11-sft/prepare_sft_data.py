@@ -74,6 +74,20 @@ def parse_record(rec):
     return [(q, out)]
 
 
+def iter_records(path):
+    """兼容整文件 JSON 数组与 JSONL 两种存储格式。"""
+    with open(path, 'r', encoding='utf-8') as f:
+        if f.read(1) == '[':
+            f.seek(0)
+            yield from json.load(f)
+            return
+        f.seek(0)
+        for line in f:
+            line = line.strip()
+            if line:
+                yield json.loads(line)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--input', default='demo_data.jsonl', help='原始指令数据 jsonl 路径')
@@ -84,25 +98,20 @@ def main():
 
     src = 'demo_data.jsonl' if args.demo else args.input
     samples, n_skip_long, n_skip_bad = [], 0, 0
-    with open(src, 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                n_skip_bad += 1
-                continue
+    for rec in iter_records(src):
+        try:
             turns = parse_record(rec)
-            if not turns:
-                n_skip_bad += 1
-                continue
-            ids, labels = build_sample(turns)
-            if len(ids) > args.max_len:
-                n_skip_long += 1
-                continue
-            samples.append({'ids': ids, 'labels': labels})
+        except (AttributeError, TypeError, KeyError):
+            n_skip_bad += 1
+            continue
+        if not turns:
+            n_skip_bad += 1
+            continue
+        ids, labels = build_sample(turns)
+        if len(ids) > args.max_len:
+            n_skip_long += 1
+            continue
+        samples.append({'ids': ids, 'labels': labels})
 
     if not samples:
         raise SystemExit(f'没有可用样本！请检查 {src} 的格式（支持 alpaca / ShareGPT 两种）')

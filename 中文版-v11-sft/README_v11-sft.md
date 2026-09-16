@@ -9,7 +9,8 @@
 | 文件 | 说明 |
 |---|---|
 | `sft_zh_v11.py` | 训练 + 对话推理 + 基准补测单文件（项目惯例，main() 注释切换入口） |
-| `prepare_sft_data.py` | 指令数据 → tokenized 样本（ids + labels），支持 alpaca/Belle 单轮与 ShareGPT 多轮 |
+| `prepare_sft_data.py` | 指令数据 → tokenized 样本（ids + labels），支持 alpaca/Belle 单轮、ShareGPT 多轮、整文件 JSON 数组与 JSONL |
+| `download_sft_data.py` | 下载/导入指令数据并合并去重（alpaca-gpt4-zh 自动下载，Belle 传本地路径） |
 | `demo_data.jsonl` | 17 条手写中文指令，用于不调数据先跑通管线 |
 | `zh_bpe.model` / `zh_bpe.vocab` | 与 v10 完全相同的 BPE 分词模型（原样复制） |
 | `train.log` | 训练日志（跑训练后生成） |
@@ -45,18 +46,33 @@ labels = [-100] 屏蔽用户部分，只在 回答 + [EOT] 上计算 loss
 - **alpaca-gpt4-data-zh**（5 万，[Instruction-Tuning-with-GPT-4/GPT-4-LLM](https://github.com/Instruction-Tuning-with-GPT-4/GPT-4-LLM)）
 - **Firefly-train-1.1M**（含多轮，[YeungNLP/Firefly](https://github.com/YeungNLP/Firefly)）
 
-下载后转成 jsonl（alpaca 格式 `{"instruction","input","output"}` 或 ShareGPT 格式
-`{"conversations":[{"from","value"}]}` 均可直接喂给 prepare 脚本），然后：
+`download_sft_data.py` 负责下载和合并（alpaca-gpt4-zh 自动从 GitHub 下载；
+Belle 文件 600MB+ 需手动从 HuggingFace 下载后传路径）：
+
+```bash
+# 只用它：自动下载 alpaca-gpt4-zh（43MB）→ 去重采样 → sft_all.jsonl
+python download_sft_data.py
+
+# 合并 Belle
+python download_sft_data.py --belle path/to/train_0.5M_CN.json
+
+# 追加其他同格式文件、调整采样量
+python download_sft_data.py --extra other.jsonl --max-samples 80000
+```
+
+然后 tokenize（超过 256 token 的样本直接丢弃，这是 block_size 的硬约束）：
 
 ```bash
 # 先拿 demo 数据跑通管线（17 条，只验证格式不进正式训练）
 python prepare_sft_data.py --demo
 
 # 正式数据
-python prepare_sft_data.py --input your_data.jsonl --output sft_data.pt
+python prepare_sft_data.py --input sft_all.jsonl --output sft_data.pt
 ```
 
-超过 256 token 的样本会被丢弃（v10 的 block_size 限制），丢弃比例会打印出来。
+**实测数据**（2026-09-16）：alpaca-gpt4-zh 48818 条 → 可用 32697 条，
+**33% 因超 256 token 被丢弃**（该数据集回答偏长，属预期）；全量 tokenize 耗时 8 秒。
+Belle 回答普遍更短，丢弃率会低不少，两者混用能补回量。
 
 ### 2. 训练（在 GPU 笔记本上）
 
