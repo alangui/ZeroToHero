@@ -47,7 +47,7 @@ labels = [-100] 屏蔽用户部分，只在 回答 + [EOT] 上计算 loss
 - **Firefly-train-1.1M**（含多轮，[YeungNLP/Firefly](https://github.com/YeungNLP/Firefly)）
 
 `download_sft_data.py` 负责下载和合并（alpaca-gpt4-zh 自动从 GitHub 下载；
-Belle 文件 600MB+ 需手动从 HuggingFace 下载后传路径）：
+Belle 需手动下载后传路径）：
 
 ```bash
 # 只用它：自动下载 alpaca-gpt4-zh（43MB）→ 去重采样 → sft_all.jsonl
@@ -72,7 +72,8 @@ python prepare_sft_data.py --input sft_all.jsonl --output sft_data.pt
 
 **实测数据**（2026-09-16）：alpaca-gpt4-zh 48818 条 → 可用 32697 条，
 **33% 因超 256 token 被丢弃**（该数据集回答偏长，属预期）；全量 tokenize 耗时 8 秒。
-Belle 回答普遍更短，丢弃率会低不少，两者混用能补回量。
+Belle（`Belle_open_source_0.5M.json`，286MB）回答普遍更短，丢弃率会低不少，
+两者混用能补回量；注意 Belle 仅限研究用途不可商用（GPL-3.0）。
 
 ### 2. 训练（在 GPU 笔记本上）
 

@@ -11,7 +11,9 @@
 #      来源：https://github.com/Instruction-Tuning-with-GPT-4/GPT-4-LLM
 #   2. Belle train_0.5M_CN（50 万条，单轮，量大质量参差）—— 手动下载后传路径
 #      https://huggingface.co/datasets/BelleGroup/train_0.5M_CN
-#      （文件 600MB+，HuggingFace 下载比 GitHub 稳；下不动就只用 alpaca-gpt4-zh 也够跑通）
+#      实际文件名 Belle_open_source_0.5M.json（286MB），页面点 Files → 下载；
+#      国内网络打不开就把 huggingface.co 换成镜像 hf-mirror.com，路径不变
+#      ⚠️ 许可限制：GPL-3.0，且官方声明仅限研究用途、不得商用
 #   3. 其他任意同格式 jsonl 用 --extra 追加
 #
 # 合并后用 prepare_sft_data.py 做 tokenize：
