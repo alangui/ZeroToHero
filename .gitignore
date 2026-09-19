@@ -18,4 +18,5 @@ wiki_corpus_0.4b_clean.txt
 
 # SFT 指令数据原始文件（download_sft_data.py 可随时重新下载）
 中文版-v11-sft/alpaca_gpt4_data_zh.json
-
+中文版-v11-sft/Belle_open_source_0.5M.json
+中文版-v11-sft/sft_all.jsonl
