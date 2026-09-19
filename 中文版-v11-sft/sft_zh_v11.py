@@ -14,6 +14,7 @@ import math
 import logging
 import random
 import sentencepiece as spm
+from torch.utils.checkpoint import checkpoint
 
 # ========== 超参数（模块级常量，项目惯例）==========
 batch_size = 16            # SFT 样本短且变长，batch 不用预训练那么大
@@ -132,9 +133,10 @@ class Block(nn.Module):
         self.ln2 = nn.LayerNorm(n_embd)
 
     def forward(self, x):
-        # 不做梯度检查点：SFT 样本短、显存压力远小于预训练，省下 30% 速度损耗
-        x = x + self.sa_head(self.ln1(x))
-        x = x + self.ffwd(self.ln2(x))
+        # 梯度检查点重新打开：2026-09-19 实测 batch 16 不开检查点 OOM（8.58GB 顶满，
+        # v10 在同款卡上靠检查点压到 6464 MiB）。慢 30% 换显存安全，2000 步短跑可接受。
+        x = x + checkpoint(lambda t: self.sa_head(self.ln1(t)), x, use_reentrant=False)
+        x = x + checkpoint(lambda t: self.ffwd(self.ln2(t)), x, use_reentrant=False)
         return x
 
 
