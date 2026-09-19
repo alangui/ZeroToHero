@@ -400,7 +400,7 @@ def main():
     pass
     #train_loop()
     #chat('model_best_zh_v11.pt')
-    #eval_forgetting('model_best_zh_v11.pt')
+    eval_forgetting('model_best_zh_v11.pt')
     #analy_model()
 
 if __name__ == '__main__':
