@@ -27,6 +27,7 @@ import urllib.request
 
 ALPACA_GPT4_ZH_URL = 'https://raw.githubusercontent.com/Instruction-Tuning-with-GPT-4/GPT-4-LLM/main/data/alpaca_gpt4_data_zh.json'
 ALPACA_LOCAL = 'alpaca_gpt4_data_zh.json'
+IDENTITY_LOCAL = 'identity_data.jsonl'   # 手写身份/能力问答，防"你是谁"类问题冷场（v11 盲测教训）
 
 
 def download_alpaca():
@@ -67,14 +68,28 @@ def iter_records(path):
                 yield json.loads(line)
 
 
+# 2026-09-19 v11 盲测教训：Belle 的拒答模板和输入复述任务会直接训出"抱歉怪+复读机"
+# （见 v11-sft模型训练总结 2.6 节），合并时统一拦截
+REFUSAL_PREFIXES = ('很抱歉', '对不起', '抱歉，', '抱歉,', '我无法', '我不能', '作为一个')
+ECHO_KEYWORDS = ('重复', '倒序', '倒过来', '逆向', '反过来')
+
+
 def normalize(rec):
-    """统一成 alpaca 格式。过滤掉明显不合格的样本（空字段/过短回答）。"""
+    """统一成 alpaca 格式。过滤明显不合格的样本（空字段/过短回答/拒答模板/复述任务）。"""
     if 'conversations' in rec:
         return rec  # ShareGPT 多轮，prepare 脚本原生支持
     inst, inp, out = rec.get('instruction'), rec.get('input'), rec.get('output')
     if not inst or not out or len(out.strip()) < 10:
         return None
-    return {'instruction': inst.strip(), 'input': (inp or '').strip(), 'output': out.strip()}
+    out = out.strip()
+    # 拒答模板：Belle 成批的"我很抱歉无法…"，会学成全场景兜底话术
+    if any(out.startswith(p) for p in REFUSAL_PREFIXES):
+        return None
+    # 输入复述任务：Belle 大量"重复输入/倒序/改写"类，回答是输入的拷贝，
+    # 训出的默认策略是复读用户的话
+    if any(k in inst for k in ECHO_KEYWORDS):
+        return None
+    return {'instruction': inst.strip(), 'input': (inp or '').strip(), 'output': out}
 
 
 def main():
@@ -89,7 +104,7 @@ def main():
     if not os.path.exists(ALPACA_LOCAL):
         download_alpaca()
 
-    sources = [(ALPACA_LOCAL, 'alpaca-gpt4-zh')]
+    sources = [(ALPACA_LOCAL, 'alpaca-gpt4-zh'), (IDENTITY_LOCAL, 'identity(手写身份)')]
     if args.belle:
         sources.append((args.belle, 'Belle'))
     for p in args.extra:

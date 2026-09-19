@@ -255,8 +255,12 @@ def build_chat_context(history, new_q):
 
 
 @torch.no_grad()
-def generate_chat(model, context_ids, max_new_tokens=256, temperature=0.7, top_k=50):
-    """temperature/top-k 采样；遇到 EOT 立即收口（v10 裸 multinomial 的改进版）。"""
+def generate_chat(model, context_ids, max_new_tokens=256, temperature=0.4, top_k=30):
+    """temperature/top-k 采样；遇到 EOT 立即收口。
+
+    2026-09-19 盲测教训：234M 弱模型用 temperature 0.7/top_k 50 采样噪声盖过正确
+    token，输出复读机+乱码；降到 0.4/30 后稳定性显著改善。弱模型宁低勿高。
+    """
     model.eval()
     idx = torch.tensor([context_ids], dtype=torch.long, device=device)
     for _ in range(max_new_tokens):
