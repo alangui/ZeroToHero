@@ -48,6 +48,16 @@ def main():
         peak = torch.cuda.max_memory_allocated() / 1024**3
         print(f'  显存峰值: {peak:.2f} GB')
 
+    # 显卡实时状态（SSH 变慢之谜的定位线索：看 SM 频率/功耗是否被压）
+    import subprocess
+    try:
+        out = subprocess.run(
+            ['nvidia-smi', '--query-gpu=clocks.sm,power.draw,pstate',
+             '--format=csv,noheader'], capture_output=True, text=True, timeout=10)
+        print(f'  显卡状态: {out.stdout.strip()}  (SM频率低/功耗低 = 被限频，查电源/会话)')
+    except Exception:
+        pass
+
 
 if __name__ == '__main__':
     main()
