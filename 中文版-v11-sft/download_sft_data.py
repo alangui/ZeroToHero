@@ -70,7 +70,16 @@ def iter_records(path):
 
 # 2026-09-19 v11 盲测教训：Belle 的拒答模板和输入复述任务会直接训出"抱歉怪+复读机"
 # （见 v11-sft模型训练总结 2.6 节），合并时统一拦截
-REFUSAL_PREFIXES = ('很抱歉', '对不起', '抱歉，', '抱歉,', '我无法', '我不能', '作为一个')
+# 2026-09-20 v11.3 盲测教训：拒答开场白变体极多（"很抱歉/我非常抱歉/非常抱歉"），
+# startswith 玩前缀是打地鼠——改用"前 8 字包含即拦截"，变体一网打尽
+REFUSAL_PREFIXES = ('我无法', '我不能', '作为一个')
+
+
+def is_refusal(out):
+    """拒答开场白检测：前 8 个字里出现"抱歉/对不起"即判定（覆盖 很抱歉/非常抱歉/
+    我很抱歉 等所有语序变体），或以"我无法/我不能/作为一个"开头。"""
+    return ('抱歉' in out[:8] or '对不起' in out[:8]
+            or out.startswith(REFUSAL_PREFIXES))
 ECHO_KEYWORDS = ('重复', '倒序', '倒过来', '逆向', '反过来')
 
 
@@ -82,8 +91,8 @@ def normalize(rec):
     if not inst or not out or len(out.strip()) < 10:
         return None
     out = out.strip()
-    # 拒答模板：Belle 成批的"我很抱歉无法…"，会学成全场景兜底话术
-    if any(out.startswith(p) for p in REFUSAL_PREFIXES):
+    # 拒答模板：Belle/alpaca 成批的"（我）（很/非常）抱歉…"，会学成全场景兜底话术
+    if is_refusal(out):
         return None
     # 输入复述任务：Belle 大量"重复输入/倒序/改写"类，回答是输入的拷贝，
     # 训出的默认策略是复读用户的话
