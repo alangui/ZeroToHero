@@ -97,6 +97,9 @@ def main():
     ap.add_argument('--belle', help='Belle train_0.5M_CN 本地文件路径（jsonl 或 json 数组均可）')
     ap.add_argument('--extra', action='append', default=[], help='追加其他同格式数据文件，可多次指定')
     ap.add_argument('--max-samples', type=int, default=50000, help='合并去重后的采样上限（默认 5 万）')
+    ap.add_argument('--belle-cap', type=int, default=15000,
+                    help='Belle 降采样上限（默认 1.5 万；v11.2 教训：Belle 占 91% 会把模型 '
+                         '训成模板文体且对口语短问题 OOD 坍缩，压到 ~25% 配比）')
     ap.add_argument('--seed', type=int, default=1337)
     args = ap.parse_args()
 
@@ -113,6 +116,7 @@ def main():
     seen, merged, stats = set(), [], {}
     for path, name in sources:
         n_new, n_skip = 0, 0
+        cap = args.belle_cap if name == 'Belle' else None   # Belle 降采样（v11.3 药方）
         for rec in iter_records(path):
             rec = normalize(rec)
             if rec is None:
@@ -124,10 +128,13 @@ def main():
                 n_skip += 1
                 continue
             seen.add(key)
+            if cap is not None and n_new >= cap:
+                n_skip += 1
+                continue
             merged.append(rec)
             n_new += 1
         stats[name] = (n_new, n_skip)
-        print(f'{name}: 新增 {n_new} 条，去重/过滤 {n_skip} 条')
+        print(f'{name}: 新增 {n_new} 条，去重/过滤/降采样 {n_skip} 条')
 
     random.seed(args.seed)
     random.shuffle(merged)
