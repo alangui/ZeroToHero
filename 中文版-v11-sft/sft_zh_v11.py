@@ -255,18 +255,31 @@ def build_chat_context(history, new_q):
 
 
 @torch.no_grad()
-def generate_chat(model, context_ids, max_new_tokens=256, temperature=0.4, top_k=30):
-    """temperature/top-k 采样；遇到 EOT 立即收口。
+def generate_chat(model, context_ids, max_new_tokens=256, temperature=0.4, top_k=30,
+                  repetition_penalty=1.2):
+    """temperature/top-k 采样 + 重复惩罚；遇到 EOT 立即收口。
 
     2026-09-19 盲测教训：234M 弱模型用 temperature 0.7/top_k 50 采样噪声盖过正确
     token，输出复读机+乱码；降到 0.4/30 后稳定性显著改善。弱模型宁低勿高。
+    2026-09-20 v11.2 盲测教训：弱模型开放式生成会掉进"秋风吹拂×N"式退化循环
+    （循环路径自我强化，EOT 永远采不出来）。repetition_penalty=1.2 把已出现
+    token 的 logits 压低（HF generate 同款机制），人为打破循环，不必重训。
     """
     model.eval()
     idx = torch.tensor([context_ids], dtype=torch.long, device=device)
     for _ in range(max_new_tokens):
         idx_cond = idx[:, -block_size:]
         logits, _ = model(idx_cond)
-        logits = logits[:, -1, :] / max(temperature, 1e-5)
+        logits = logits[:, -1, :]
+        if repetition_penalty != 1.0:
+            # 出现过的 token：正 logits 除以惩罚、负 logits 乘惩罚，统一压低其概率
+            seen = set(idx[0].tolist())
+            for tid in seen:
+                if logits[0, tid] > 0:
+                    logits[0, tid] /= repetition_penalty
+                else:
+                    logits[0, tid] *= repetition_penalty
+        logits = logits / max(temperature, 1e-5)
         if top_k is not None:
             v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
             logits[logits < v[:, [-1]]] = -float('inf')
