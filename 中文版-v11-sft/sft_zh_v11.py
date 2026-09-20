@@ -289,7 +289,8 @@ def generate_chat(model, context_ids, max_new_tokens=256, temperature=0.4, top_k
             break
         idx = torch.cat((idx, idx_next), dim=1)
     model.train()
-    return decode_ids(idx[0].tolist())
+    # 只解码新生成的部分——上下文是输入，不属于回答，解码它会导致每轮重复打印历史
+    return decode_ids(idx[0][len(context_ids):].tolist())
 
 
 def chat(model_path='model_best_zh_v11.pt'):
